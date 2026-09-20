@@ -1,0 +1,7 @@
+{
+  "dotnet.defaultSolution": "disable",
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true
+  }
+}

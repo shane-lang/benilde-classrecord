@@ -1,0 +1,365 @@
+@host = http://localhost:5214
+
+# Paste Security:RegistrationKey from appsettings.Local.json here when creating an
+# account, and remove it again afterwards so the key is not saved in the code.
+@setupKey = PASTE-THE-KEY-HERE
+
+### Is the API up?
+GET {{host}}/api/health
+
+### ------------------------------------------------------------------ AUTH
+
+### Sign in with the seeded demo account
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "teacher@benilde.edu.ph",
+  "password": "Benilde2026"
+}
+
+@token = {{login.response.body.token}}
+
+### Wrong password, expects 401
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "teacher@benilde.edu.ph", "password": "wrong" }
+
+### Who am I?
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### --------------------------------------------------------------- CLASSES
+
+### My classes
+GET {{host}}/api/classes
+Authorization: Bearer {{token}}
+
+### Create a class (also seeds the default grade breakdown)
+# @name newClass
+POST {{host}}/api/classes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "subjectName": "Web Development",
+  "subjectCode": "IT-312",
+  "course": "BSIT",
+  "yearSection": "3-A",
+  "schoolYear": "2026-2027",
+  "prelimWeight": 0.30,
+  "midtermWeight": 0.30,
+  "finalsWeight": 0.40
+}
+
+### The same class with equal periods (final grade = mean of the three)
+# POST {{host}}/api/classes with "prelimWeight": 0, "midtermWeight": 0, "finalsWeight": 0
+
+@classId = {{newClass.response.body.id}}
+
+### The class, with its schedule and categories
+GET {{host}}/api/classes/{{classId}}
+Authorization: Bearer {{token}}
+
+### --------------------------------------------------------------- ROSTER
+
+### Add students. A student already known by number is reused, not duplicated.
+# @name roster
+POST {{host}}/api/classes/{{classId}}/students
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "students": [
+    { "studentNumber": "2023-0001", "firstName": "Andrea",  "lastName": "Cruz"   },
+    { "studentNumber": "2023-0002", "firstName": "Miguel",  "lastName": "Santos" },
+    { "studentNumber": "2023-0003", "firstName": "Bea",     "lastName": "Reyes"  }
+  ]
+}
+
+@enrollmentId = {{roster.response.body.0.enrollmentId}}
+
+### The roster
+GET {{host}}/api/classes/{{classId}}/students
+Authorization: Bearer {{token}}
+
+### -------------------------------------------------------------- SCHEDULE
+
+### Mon/Wed/Fri, 8:00 AM, with the three grading periods dated
+PUT {{host}}/api/classes/{{classId}}/schedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "startTime": "08:00:00",
+  "durationMinutes": 90,
+  "meetingDays": [
+    { "weekday": 1 },
+    { "weekday": 3 },
+    { "weekday": 5 }
+  ],
+  "periodRanges": [
+    { "gradingPeriod": "Prelim",  "startDate": "2026-08-17", "endDate": "2026-09-25" },
+    { "gradingPeriod": "Midterm", "startDate": "2026-09-28", "endDate": "2026-11-06" },
+    { "gradingPeriod": "Finals",  "startDate": "2026-11-09", "endDate": "2026-12-18" }
+  ]
+}
+
+### The same class, but the Saturday laboratory runs at a different hour.
+### startTime/durationMinutes on a day are optional: leave them out and the
+### day follows the class's usual time above.
+PUT {{host}}/api/classes/1/schedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "startTime": "08:00:00",
+  "durationMinutes": 90,
+  "meetingDays": [
+    { "weekday": 1 },
+    { "weekday": 3 },
+    { "weekday": 6, "startTime": "13:00:00", "durationMinutes": 180 }
+  ],
+  "periodRanges": [
+    { "gradingPeriod": "Prelim",  "startDate": "2026-08-17", "endDate": "2026-09-25" },
+    { "gradingPeriod": "Midterm", "startDate": "2026-09-28", "endDate": "2026-11-06" },
+    { "gradingPeriod": "Finals",  "startDate": "2026-11-09", "endDate": "2026-12-18" }
+  ]
+}
+
+### The class days this generates for Prelim, with no dates typed by hand
+GET {{host}}/api/classes/{{classId}}/attendance/days?period=Prelim
+Authorization: Bearer {{token}}
+
+### Mark a holiday
+POST {{host}}/api/classes/{{classId}}/schedule/no-class-days
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "date": "2026-08-21", "reason": "Ninoy Aquino Day" }
+
+### ------------------------------------------------------------ CATEGORIES
+
+### The grade breakdown
+# @name categories
+GET {{host}}/api/classes/{{classId}}/categories
+Authorization: Bearer {{token}}
+
+@categoryId = {{categories.response.body.1.id}}
+
+### Add a category
+POST {{host}}/api/classes/{{classId}}/categories
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Recitation", "weight": 0.10, "sortOrder": 6 }
+
+### ----------------------------------------------------------- ASSESSMENTS
+
+### Create Quiz 1 through Quiz 4 in one call
+# @name quizzes
+POST {{host}}/api/categories/{{categoryId}}/assessments/series
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "namePrefix": "Quiz", "count": 4, "maxScore": 50, "gradingPeriod": "Prelim" }
+
+@assessmentId = {{quizzes.response.body.0.id}}
+
+### Every item in the class for Prelim
+GET {{host}}/api/classes/{{classId}}/assessments?period=Prelim
+Authorization: Bearer {{token}}
+
+### ---------------------------------------------------------------- SCORES
+
+### Save a whole column at once
+PUT {{host}}/api/classes/{{classId}}/scores
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "scores": [
+    { "assessmentId": {{assessmentId}}, "enrollmentId": {{enrollmentId}}, "score": 46 }
+  ]
+}
+
+### A score above the perfect score is refused
+PUT {{host}}/api/classes/{{classId}}/scores
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "scores": [
+    { "assessmentId": {{assessmentId}}, "enrollmentId": {{enrollmentId}}, "score": 999 }
+  ]
+}
+
+### ------------------------------------------------------------ ATTENDANCE
+
+### Mark a class day
+PUT {{host}}/api/classes/{{classId}}/attendance
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "records": [
+    {
+      "enrollmentId": {{enrollmentId}},
+      "date": "2026-08-17",
+      "status": "Present",
+      "gradingPeriod": "Prelim"
+    }
+  ]
+}
+
+### Read the sheet
+GET {{host}}/api/classes/{{classId}}/attendance?period=Prelim
+Authorization: Bearer {{token}}
+
+### ---------------------------------------------------------------- GRADES
+
+### Class standing: every student, all three periods, computed on request
+GET {{host}}/api/classes/{{classId}}/grades
+Authorization: Bearer {{token}}
+
+### One student, broken down by category
+GET {{host}}/api/classes/{{classId}}/grades/{{enrollmentId}}?period=Prelim
+Authorization: Bearer {{token}}
+
+### ------------------------------------------------------------- OWNERSHIP
+
+### Another teacher's class reads as "not found", never "forbidden"
+GET {{host}}/api/classes/999999
+Authorization: Bearer {{token}}
+
+### No token at all, expects 401
+GET {{host}}/api/classes
+
+### ------------------------------------------------------ TEACHER ACCOUNTS
+
+### Create a teacher account (needs the setup key)
+POST {{host}}/api/auth/register
+Content-Type: application/json
+X-Setup-Key: {{setupKey}}
+
+{
+  "email": "juan.delacruz@benilde.edu.ph",
+  "password": "Temporary2026",
+  "fullName": "Juan Dela Cruz",
+  "department": "Information Technology"
+}
+
+### Without the setup key, expects 403
+POST {{host}}/api/auth/register
+Content-Type: application/json
+
+{ "email": "intruder@example.com", "password": "Password123", "fullName": "Intruder" }
+
+### Change your own password (sign in first so {{token}} is set)
+POST {{host}}/api/auth/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "Benilde2026",
+  "newPassword": "NewPassword2026"
+}
+
+### ------------------------------------------------- CLASS HISTORY AND LOCKS
+
+### The class history (audit trail)
+GET {{host}}/api/classes/{{classId}}/history?limit=50
+Authorization: Bearer {{token}}
+
+### Finalize Prelim — scores, items and attendance in it are refused after this
+PUT {{host}}/api/classes/{{classId}}/periods/Prelim/lock
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "locked": true }
+
+### Reopen Prelim
+PUT {{host}}/api/classes/{{classId}}/periods/Prelim/lock
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "locked": false }
+
+### Archive the class (hidden from the dashboard, nothing deleted)
+PUT {{host}}/api/classes/{{classId}}/archive
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "archived": true }
+
+### Classes including the archived ones
+GET {{host}}/api/classes?includeArchived=true
+Authorization: Bearer {{token}}
+
+### ---------------------------------------------------- ADMIN (admins only)
+
+### All faculty accounts
+GET {{host}}/api/admin/teachers
+Authorization: Bearer {{token}}
+
+### Create a faculty account (leave out "password" to get a random one back)
+POST {{host}}/api/admin/teachers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "juan.delacruz@benilde.edu.ph",
+  "fullName": "Juan Dela Cruz",
+  "department": "Information Technology",
+  "isAdmin": false
+}
+
+### Reset a teacher's password — the new one comes back once
+POST {{host}}/api/admin/teachers/2/reset-password
+Authorization: Bearer {{token}}
+
+### Deactivate an account (their sessions stop working at once)
+PUT {{host}}/api/admin/teachers/2/active
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "active": false }
+
+### The whole audit trail
+GET {{host}}/api/admin/audit?limit=100
+Authorization: Bearer {{token}}
+
+### ---------------------------------------------------------------- invites
+### Invite a teacher. The code comes back once; only a hash of it is stored.
+POST {{host}}/api/admin/invites
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "aquino@benilde.edu.ph",
+  "fullName": "Arthur M. Aquino",
+  "department": "Information Technology",
+  "isAdmin": false,
+  "daysValid": 7
+}
+
+### Every invitation, with Pending / Accepted / Expired worked out server-side
+GET {{host}}/api/admin/invites
+Authorization: Bearer {{token}}
+
+### Cancel one that has not been used
+DELETE {{host}}/api/admin/invites/1
+Authorization: Bearer {{token}}
+
+### The teacher claims it. No token needed, and rate limited like login.
+### The code only works with the e-mail it was issued for, and only once.
+POST {{host}}/api/auth/accept-invite
+Content-Type: application/json
+
+{
+  "email": "aquino@benilde.edu.ph",
+  "code": "BCR-A7K2-9MTQ",
+  "password": "the-password-they-choose"
+}
