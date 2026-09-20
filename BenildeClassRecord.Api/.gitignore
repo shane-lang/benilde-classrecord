@@ -2,3 +2,4 @@ bin/
 obj/
 *.user
 appsettings.Local.json
+BenildeClassRecord.Api/sql/
